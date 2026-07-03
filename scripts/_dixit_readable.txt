@@ -1,0 +1,79 @@
+SHAPE: [99722, 18531]
+
+OBS_COLS:
+  - cluster
+  - guide
+  - INTERGENIC1144056
+  - INTERGENIC1216445
+  - INTERGENIC216151
+  - INTERGENIC393453
+  - sgCREB1_2
+  - sgCREB1_4
+  - sgCREB1_5
+  - sgE2F4_6
+  - sgE2F4_7
+  - sgEGR1_2
+  - sgEGR1_3
+  - sgEGR1_4
+  - sgELF1_1
+  - sgELF1_2
+  - sgELF1_4
+  - sgELF1_5
+  - sgELK1_1
+  - sgELK1_6
+  - sgELK1_7
+  - sgETS1_3
+  - sgETS1_5
+  - sgGABPA_1
+  - sgGABPA_9
+  - sgIRF1_2
+  - sgIRF1_3
+  - sgNR2C2_2
+  - sgNR2C2_3
+  - sgNR2C2_5
+  - sgYY1_10
+  - sgYY1_3
+  - batch
+  - n_genes
+  - n_genes_by_counts
+  - total_counts
+  - total_counts_mt
+  - pct_counts_mt
+  - leiden
+  - perturbation_name
+  - perturbation_type
+  - perturbation_value
+  - perturbation_unit
+
+VAR_COLS:
+  - index
+  - n_cells
+  - mt
+  - n_cells_by_counts
+  - mean_counts
+  - pct_dropout_by_counts
+  - total_counts
+  - highly_variable
+  - means
+  - dispersions
+  - dispersions_norm
+
+VAR_NAMES_SAMPLE: ['TSPAN6', 'DPM1', 'SCYL3', 'C1orf112', 'CFH']
+
+PERT_NAME_COUNT: 641
+PERT_NAME_SAMPLES:
+  - ELK1
+  - ELF1
+  - IRF1
+  - ETS1
+  - control
+  - INTERGENIC216151
+  - EGR1
+  - YY1
+  - INTERGENIC393453
+  - GABPA
+  - E2F4
+  - NR2C2
+  - CREB1
+  - INTERGENIC1216445
+  - INTERGENIC1144056

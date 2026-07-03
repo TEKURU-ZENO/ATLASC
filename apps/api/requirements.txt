@@ -1,0 +1,20 @@
+# Core ML & Data
+torch
+torch_geometric
+numpy
+pandas
+scipy
+scikit-learn
+
+# Bioinformatics
+scanpy
+anndata
+networkx
+
+# API & Backend Services
+fastapi
+uvicorn
+pydantic
+
+# Visualization / Utils
+matplotlib

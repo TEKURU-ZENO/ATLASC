@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Data (Ignore all external, raw, and processed datasets)
+data/raw/*
+!data/raw/.gitkeep
+data/external/
+data/processed/
+
+# Checkpoints / Saved weights
+models/checkpoints/
+
+# Logs & OS metadata
+*.log
+.DS_Store
+Thumbs.db
+artifacts/
+

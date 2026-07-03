@@ -1,0 +1,9 @@
+encoder:
+  input_dim: 2000
+  latent_dim: 256
+  dropout: 0.1
+
+gnn:
+  hidden_dim: 128
+  layers: 4
+  aggregation: mean

@@ -1,0 +1,34 @@
+Starting Cross-Dataset Transfer Validation (Norman -> Dixit)
+
+Loading Frozen Norman Architecture...
+Loading precomputed tensors from data/processed into memory...
+Dataset ready.
+Evaluating Norman Holdout Baseline (Zero-Shot)
+Evaluating Dixit Target Domain (Zero-Shot)
+
+Calibration Analysis [Dixit Calibration (Normalized)]
+  Pearson r: 0.0012  (p=6.99e-01)
+  Calibration Slope (beta): 0.0012
+  Verdict: MARGINAL
+Calibration curve saved to experiments/results/calibration_dixit_target_domain_dixit_calibration_(normalized).png
+
+=======================================================
+Phase 6: Transfer Validation Results
+=======================================================
+
+1. Performance & Uncertainty Shift
+  Norman MSE Baseline: 0.8148
+  Dixit Zero-Shot MSE: 0.2306
+  Delta MSE (Domain Shift): -0.5842
+  Delta U (Epistemic Resp): -6.2176
+
+2. Epistemic Calibration under Shift (Dixit Target Domain)
+  Correlation (U vs MSE): 0.0012 (p=6.99e-01)
+  Calibration Slope Beta: 0.0012
+  Random baseline corr: 0.0013
+
+3. Representation Gap
+  KL(Norman || Dixit): 85164.7266
+
+Interpretation:
+WARNING: Epistemic calibration is noisy or non-linear.
