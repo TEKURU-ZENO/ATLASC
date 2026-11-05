@@ -1,11 +1,8 @@
 """
 run_al_full.py  (Phase 9)
 --------------------------
-Runs the full Active Learning experiment across 3 random seeds.
+Runs the full Active Learning experiment across random seeds with real multi-round acquisitions.
 Saves per-seed and aggregated results to experiments/results/al_results.json.
-
-Estimated runtime: 30–90 minutes on CPU (4 strategies × 4 AL steps × 3 seeds × 2 epochs).
-Run in background or overnight: python scripts/run_al_full.py
 """
 
 import os
@@ -33,7 +30,7 @@ from simulation.rollout_engine import RolloutEngine
 from active_learning.acquisition import compute_candidate_metrics, rank_and_select
 
 
-# ── Helpers (inline, same logic as active_learning_simulation.py) ─────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_node_degree(gene_idx, edge_index):
     return ((edge_index[0] == gene_idx).sum() + (edge_index[1] == gene_idx).sum()).item()
@@ -99,22 +96,32 @@ def extract_single_gene_cells(dataset):
 
 
 def run_one_seed(seed, full_ds, edge_index, device, num_epochs=2,
-                 al_steps=3, k_queries=10, results_dir="experiments/results"):
+                 al_steps=4, k_queries=2, max_cells_per_gene=80,
+                 results_dir="experiments/results"):
     random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
     print(f"\n{'='*55}\nSeed {seed}\n{'='*55}")
 
     vocab, cell2genes, valid_cells = extract_single_gene_cells(full_ds)
-    torch.manual_seed(42)
+    torch.manual_seed(seed)
     shuffled = [vocab[i] for i in torch.randperm(len(vocab)).tolist()]
-    n = len(shuffled)
-    init_train = set(shuffled[:int(0.6 * n)])
-    pool       = set(shuffled[int(0.6 * n):int(0.85 * n)])
-    holdout    = set(shuffled[int(0.85 * n):])
 
-    held_cells = [c for c in valid_cells
-                  if cell2genes.get(c) and cell2genes[c][0] in holdout]
+    # Structural partition: 4 holdout, 3 init_train, 12 pool
+    holdout    = set(shuffled[:4])
+    init_train = set(shuffled[4:7])
+    pool       = set(shuffled[7:])
+
+    # Subsample cells per gene for balanced gradient contribution and stable fast training
+    gene_to_cells = {}
+    for g in vocab:
+        c_list = [c for c in valid_cells if cell2genes.get(c) and cell2genes[c][0] == g]
+        rng = random.Random(seed + g)
+        rng.shuffle(c_list)
+        gene_to_cells[g] = c_list[:max_cells_per_gene]
+
+    held_cells = [c for g in holdout for c in gene_to_cells[g]]
     holdout_loader = DataLoader(Subset(full_ds, held_cells), batch_size=128, shuffle=False)
     print(f"  Holdout: {len(holdout)} genes, {len(held_cells)} cells")
+    print(f"  Init train: {len(init_train)} genes, Pool: {len(pool)} genes")
 
     base_cells = [c for c in valid_cells if not cell2genes.get(c)][:50]
     base_batch = next(iter(DataLoader(Subset(full_ds, base_cells), batch_size=50)))[0]
@@ -128,8 +135,7 @@ def run_one_seed(seed, full_ds, edge_index, device, num_epochs=2,
         errors = []
 
         for step in range(al_steps + 1):
-            train_cells = [c for c in valid_cells
-                           if cell2genes.get(c) and cell2genes[c][0] in cur_train]
+            train_cells = [c for g in cur_train for c in gene_to_cells[g]]
             loader = DataLoader(Subset(full_ds, train_cells), batch_size=64, shuffle=True)
             ensemble = train_ensemble(loader, edge_index, full_ds.num_genes,
                                      num_epochs=num_epochs, device=device,
@@ -137,14 +143,15 @@ def run_one_seed(seed, full_ds, edge_index, device, num_epochs=2,
             sim = RolloutEngine(ensemble, "deterministic")
             mse = evaluate_holdout(ensemble, holdout_loader, edge_index, device)
             errors.append(mse)
-            print(f"    Step {step}: MSE={mse:.4f}")
+            print(f"    Step {step}: MSE={mse:.4f} (train_genes={len(cur_train)})")
 
             if step == al_steps or not cur_pool:
                 break
 
             k_act = min(k_queries, len(cur_pool))
             if strategy == "random":
-                selected = random.sample(cur_pool, k_act)
+                rng = random.Random(seed + step * 100)
+                selected = rng.sample(cur_pool, k_act)
             elif strategy == "degree":
                 selected = sorted(cur_pool, key=lambda g: get_node_degree(g, edge_index),
                                   reverse=True)[:k_act]
@@ -156,6 +163,7 @@ def run_one_seed(seed, full_ds, edge_index, device, num_epochs=2,
                 selected, _ = rank_and_select(cur_pool, u_raw, z_reps, hubs,
                                               k=k_act, lambda1=1.0, lambda2=1.0,
                                               ablation_mode=ablation)
+            print(f"    Acquired {k_act} genes: {selected}")
             for g in selected:
                 cur_pool.remove(g); cur_train.add(g)
 
@@ -183,6 +191,7 @@ def main(args):
                           num_epochs=args.epochs,
                           al_steps=args.al_steps,
                           k_queries=args.k_queries,
+                          max_cells_per_gene=args.max_cells_per_gene,
                           results_dir=results_dir)
         all_results[str(seed)] = sr
 
@@ -220,9 +229,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Full Active Learning Experiment")
-    parser.add_argument("--seeds",    nargs="+", type=int, default=[42, 123, 999])
-    parser.add_argument("--epochs",   type=int,  default=2)
-    parser.add_argument("--al-steps", type=int,  default=3)
-    parser.add_argument("--k-queries",type=int,  default=10)
+    parser.add_argument("--seeds",              nargs="+", type=int, default=[42, 123, 999])
+    parser.add_argument("--epochs",             type=int,  default=2)
+    parser.add_argument("--al-steps",           type=int,  default=4)
+    parser.add_argument("--k-queries",          type=int,  default=2)
+    parser.add_argument("--max-cells-per-gene", type=int,  default=80)
     args = parser.parse_args()
     main(args)

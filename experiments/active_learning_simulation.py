@@ -34,8 +34,6 @@ def train_ensemble_in_memory(train_loader, edge_index, num_genes, num_epochs=2, 
         if verbose: print(f"  Training Model K={k+1}/{K_models}...")
         torch.manual_seed(100 + k)
         
-        # We retrain from scratch every AL round by re-initializing weights 
-        # based on a fixed random seed to ensure a publication-grade fair comparison.
         encoder = TranscriptomicEncoder(num_genes=num_genes, latent_dim=latent_dim).to(device)
         gnn = CausalGNN(in_channels=latent_dim, hidden_channels=latent_dim, out_channels=1, layers_count=3).to(device)
         simulator = RolloutEngine(core_model=gnn, execution_mode="deterministic")
@@ -47,7 +45,6 @@ def train_ensemble_in_memory(train_loader, edge_index, num_genes, num_epochs=2, 
         gnn.train()
         
         for epoch in range(num_epochs):
-            # Reduced epoch schedule: always 2 rollout steps to speed up AL simulation
             current_steps = 2
             
             for x, intervened_genes, target in train_loader:
@@ -95,11 +92,9 @@ def evaluate_holdout(ensemble, holdout_loader, edge_index, simulator, device='cp
             
             z0_k = ensemble.encode(x)
             
-            # Predict using mean of ensemble
             preds_k = []
             for k in range(ensemble.k_models):
                 z_k = apply_intervention(z0_k[k], intervened_genes, value=0.0)
-                # Rollout individual models
                 latent_pred, _ = RolloutEngine(ensemble.gnns[k], "deterministic").rollout(
                     z_k, edge_index, steps=2, log_trajectory=False
                 )
@@ -145,36 +140,41 @@ def run_simulation(args):
     torch.manual_seed(42)
     shuffled_vocab = vocab[torch.randperm(len(vocab))].tolist()
     
-    total = len(shuffled_vocab)
-    train_size = int(0.6 * total)
-    pool_size = int(0.25 * total)
+    holdout_vocab = set(shuffled_vocab[:4])
+    initial_train_vocab = set(shuffled_vocab[4:7])
+    initial_pool_vocab = set(shuffled_vocab[7:])
     
-    initial_train_vocab = set(shuffled_vocab[:train_size])
-    initial_pool_vocab = set(shuffled_vocab[train_size:train_size + pool_size])
-    holdout_vocab = set(shuffled_vocab[train_size + pool_size:])
+    max_cells_per_gene = 80
+    gene_to_cells = {}
+    for g in vocab.tolist():
+        c_list = [c for c in valid_cells if len(cell_targets[c]) > 0 and cell_targets[c][0] == g]
+        rng = random.Random(42 + g)
+        rng.shuffle(c_list)
+        gene_to_cells[g] = c_list[:max_cells_per_gene]
     
     if args.dry_run:
         print("[DRY RUN] Subsampling data extensively...")
         initial_pool_vocab = set(list(initial_pool_vocab)[:5])
-        held_cells = [c for c in valid_cells if len(cell_targets[c])>0 and cell_targets[c][0] in holdout_vocab][:10]
+        held_cells = [c for g in holdout_vocab for c in gene_to_cells[g][:5]]
         K_queries = 2
         AL_steps = 2
         epochs = 1
     else:
-        held_cells = [c for c in valid_cells if len(cell_targets[c])>0 and cell_targets[c][0] in holdout_vocab]
-        K_queries = 10
-        AL_steps = 3
+        held_cells = [c for g in holdout_vocab for c in gene_to_cells[g]]
+        K_queries = 2
+        AL_steps = 4
         epochs = 2
         
     holdout_dataset = Subset(full_dataset, held_cells)
     holdout_loader = DataLoader(holdout_dataset, batch_size=128, shuffle=False)
     
     print(f"Absolute Holdout Set: {len(holdout_vocab)} genes, {len(held_cells)} cells")
+    print(f"Initial Train Set: {len(initial_train_vocab)} genes, Pool Set: {len(initial_pool_vocab)} genes")
     
     # Get unperturbed base cells for computing metrics
     base_cells_indices = [c for c in valid_cells if len(cell_targets[c]) == 0][:50]
     base_cells_subset = Subset(full_dataset, base_cells_indices)
-    base_cells_batch = next(iter(DataLoader(base_cells_subset, batch_size=50)))[0] # Just the expression
+    base_cells_batch = next(iter(DataLoader(base_cells_subset, batch_size=50)))[0]
     
     strategies = ["random", "degree", "utraj_only", "atlas_full"]
     results = {s: [] for s in strategies}
@@ -187,14 +187,13 @@ def run_simulation(args):
         current_train_vocab = set(initial_train_vocab)
         current_pool_vocab = list(initial_pool_vocab)
         
-        for step in range(AL_steps + 1): # Step 0 is the initial baseline performance
-            # Build current train dataloader
-            train_cells = [c for c in valid_cells if len(cell_targets[c])>0 and cell_targets[c][0] in current_train_vocab]
+        for step in range(AL_steps + 1):
+            train_cells = [c for g in current_train_vocab for c in gene_to_cells[g]]
             if args.dry_run: train_cells = train_cells[:20]
             
             train_loader = DataLoader(Subset(full_dataset, train_cells), batch_size=64, shuffle=True)
             
-            print(f"\n--- [Step {step}] Training Ensemble ---")
+            print(f"\n--- [Step {step}] Training Ensemble (train_genes={len(current_train_vocab)}) ---")
             ensemble = train_ensemble_in_memory(
                 train_loader, edge_index, full_dataset.num_genes, 
                 num_epochs=epochs, device=device, verbose=(not args.dry_run)
@@ -202,7 +201,6 @@ def run_simulation(args):
             
             simulator = RolloutEngine(ensemble, "deterministic")
             
-            # Evaluate Absolute Holdout
             mse = evaluate_holdout(ensemble, holdout_loader, edge_index, simulator, device)
             results[strategy].append(mse)
             print(f"--- [Step {step}] Holdout MSE: {mse:.4f} ---")
@@ -210,15 +208,15 @@ def run_simulation(args):
             if step == AL_steps or len(current_pool_vocab) == 0:
                 break
                 
-            # Acquisition Phase
             print(f"--- [Step {step}] Acquiring Top-{K_queries} from pool of {len(current_pool_vocab)} ---")
             k_actual = min(K_queries, len(current_pool_vocab))
             
             if strategy == "random":
-                selected = random.sample(current_pool_vocab, k_actual)
+                rng = random.Random(42 + step * 100)
+                selected = rng.sample(current_pool_vocab, k_actual)
             elif strategy == "degree":
                 degrees = [(g, get_node_degree(g, edge_index)) for g in current_pool_vocab]
-                degrees.sort(key=lambda x: x[1], reverse=True) # Highest degree
+                degrees.sort(key=lambda x: x[1], reverse=True)
                 selected = [g for g, d in degrees[:k_actual]]
             else:
                 ablation = "utraj_only" if strategy == "utraj_only" else "full"
@@ -233,7 +231,6 @@ def run_simulation(args):
                 
             print(f"Selected: {selected}")
             
-            # Update Vocabs
             for g in selected:
                 current_pool_vocab.remove(g)
                 current_train_vocab.add(g)
