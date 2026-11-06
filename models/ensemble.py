@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from itertools import combinations
+from typing import Optional
 
 class EnsembleWrapper(nn.Module):
     """
@@ -17,14 +18,24 @@ class EnsembleWrapper(nn.Module):
         self.encoders = nn.ModuleList(encoders)
         self.gnns = nn.ModuleList(gnns)
 
-    def encode(self, x):
+    def encode(self, x: torch.Tensor, x_epigenomic: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Maps [batch, genes] -> [K, batch, genes, latent]
+        Supports optional x_epigenomic for multimodal encoders.
         """
-        z_k = [encoder(x) for encoder in self.encoders]
+        z_k = []
+        for encoder in self.encoders:
+            if x_epigenomic is not None:
+                try:
+                    z = encoder(x, x_epigenomic)
+                except TypeError:
+                    z = encoder(x)
+            else:
+                z = encoder(x)
+            z_k.append(z)
         return torch.stack(z_k, dim=0)
 
-    def decode(self, z):
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
         """
         Maps [K, batch, genes, latent] -> [K, batch, genes]
         """
@@ -34,7 +45,7 @@ class EnsembleWrapper(nn.Module):
             out_k.append(self.gnns[k].decode(z[k]))
         return torch.stack(out_k, dim=0)
 
-    def forward(self, z, edge_index):
+    def forward(self, z: torch.Tensor, edge_index: torch.Tensor, edge_weight: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Polymorphic transition function.
         Receives z: [K, batch, nodes, latent]
@@ -43,7 +54,10 @@ class EnsembleWrapper(nn.Module):
         z_next_k = []
         for k in range(self.k_models):
             # Pass each ensemble member's state through its own GNN
-            z_next_k.append(self.gnns[k](z[k], edge_index))
+            try:
+                z_next_k.append(self.gnns[k](z[k], edge_index, edge_weight=edge_weight))
+            except TypeError:
+                z_next_k.append(self.gnns[k](z[k], edge_index))
         return torch.stack(z_next_k, dim=0)
         
     def compute_epistemic_uncertainty(self, trajectory):

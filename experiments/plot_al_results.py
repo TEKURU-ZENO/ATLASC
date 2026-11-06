@@ -90,7 +90,7 @@ def main():
     fig.savefig(OUT_PATH, dpi=180, bbox_inches="tight",
                 facecolor=fig.get_facecolor())
     plt.close(fig)
-    print(f"✓ Convergence plot → {OUT_PATH}")
+    print(f"[DONE] Convergence plot -> {OUT_PATH}")
 
 
 if __name__ == "__main__":

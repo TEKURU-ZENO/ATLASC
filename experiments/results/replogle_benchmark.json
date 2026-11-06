@@ -1,0 +1,18 @@
+{
+  "dataset": "Replogle et al. 2022 (K562 essential screen)",
+  "evaluated_cells": 500,
+  "overlap_genes": 1037,
+  "metrics": {
+    "mse_mean": 0.23590225109457968,
+    "mse_std": 0.05427977150284505,
+    "u_traj_mean": 224.32634362792967,
+    "delta_pearson_mean": 0.036696157178594146,
+    "delta_spearman_mean": 0.009570914806706896,
+    "top20_de_recall_mean": 0.028700000000000003,
+    "calibration": {
+      "pearson_r": 0.01015743702948613,
+      "p_value": 0.8207623453537013,
+      "beta_coefficient": 0.15374483567213737
+    }
+  }
+}

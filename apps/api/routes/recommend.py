@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import torch
 import os
+import io
 
 from models.encoders.transcriptomic_encoder import TranscriptomicEncoder
 from models.gnn.causal_gnn import CausalGNN
@@ -11,6 +13,7 @@ from simulation.rollout_engine import RolloutEngine
 from utils.data_loader import get_trrust_graph, NormanDataset
 from causal.do_operator import apply_intervention
 from active_learning.acquisition import compute_candidate_metrics, rank_and_select
+from active_learning.budget_constraints import PlateLayout
 
 router = APIRouter(prefix="/recommend", tags=["Experimental Design"])
 
@@ -33,7 +36,14 @@ class RecommendResponse(BaseModel):
     selected_genes: List[int]
     explanations: Dict[int, Explanation]
 
-# Absolute project root (apps/api/routes/recommend.py → project root = 3 levels up)
+class ExportPlateRequest(BaseModel):
+    selected_genes: List[int]
+    format_type: Optional[str] = "96"  # "96" or "384"
+    control_wells: Optional[int] = 8
+    blank_wells: Optional[int] = 4
+    replicates: Optional[int] = 2
+
+# Absolute project root (apps/api/routes/recommend.py -> project root = 3 levels up)
 import os as _os
 _HERE_ROUTE = _os.path.abspath(_os.path.dirname(__file__))
 _PROJECT_ROOT_ROUTE = _os.path.abspath(_os.path.join(_HERE_ROUTE, "../../.."))
@@ -55,7 +65,8 @@ def load_atlas_services():
     edge_index = get_trrust_graph(processed_dir=processed_dir).to(device)
     num_genes = edge_index.max().item() + 1  # approximate from graph
     
-    # Better: read from gene_names.pt
+    # Read gene names
+    names = None
     names_path = os.path.join(processed_dir, "gene_names.pt")
     if os.path.exists(names_path):
         import torch as _t
@@ -106,6 +117,7 @@ def load_atlas_services():
     _ATLAS_SERVICES['edge_index'] = edge_index
     _ATLAS_SERVICES['base_cells'] = base_cells
     _ATLAS_SERVICES['device'] = device
+    _ATLAS_SERVICES['gene_names'] = names
     
     return _ATLAS_SERVICES
 
@@ -146,3 +158,56 @@ def rank_candidates(req: RecommendRequest):
         selected_genes=selected,
         explanations=explanations
     )
+
+
+@router.post("/export_plate_csv")
+def export_plate_csv(req: ExportPlateRequest):
+    """
+    Generates a downloadable CSV mapping recommended guide RNA knockouts
+    to physical 96-well or 384-well microplate coordinates with controls and blanks.
+    """
+    services = load_atlas_services()
+    gene_names = services.get("gene_names")
+
+    plate = PlateLayout(
+        format_type=req.format_type or "96",
+        control_wells=req.control_wells or 8,
+        blank_wells=req.blank_wells or 4,
+        replicates_per_perturbation=req.replicates or 2,
+    )
+
+    df = plate.allocate_plate(req.selected_genes, gene_names=gene_names)
+    csv_str = df.to_csv(index=False)
+
+    filename = f"atlas_plate_layout_{req.format_type}well.csv"
+    return Response(
+        content=csv_str,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/plate_layout_preview")
+def plate_layout_preview(req: ExportPlateRequest):
+    """
+    Returns JSON structure of microplate well allocations for interactive UI rendering.
+    """
+    services = load_atlas_services()
+    gene_names = services.get("gene_names")
+
+    plate = PlateLayout(
+        format_type=req.format_type or "96",
+        control_wells=req.control_wells or 8,
+        blank_wells=req.blank_wells or 4,
+        replicates_per_perturbation=req.replicates or 2,
+    )
+
+    df = plate.allocate_plate(req.selected_genes, gene_names=gene_names)
+    return {
+        "format_type": req.format_type,
+        "total_wells": plate.total_wells,
+        "control_wells": plate.control_wells,
+        "blank_wells": plate.blank_wells,
+        "replicates": plate.replicates,
+        "records": df.to_dict(orient="records"),
+    }

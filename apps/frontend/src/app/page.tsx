@@ -1,5 +1,8 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import TrajectoryScrubber from "@/components/TrajectoryScrubber";
+import RegulatoryCascadeViewer from "@/components/RegulatoryCascadeViewer";
+import GuidePlateWizard from "@/components/GuidePlateWizard";
 
 const API_BASE = "http://localhost:8000";
 
@@ -323,6 +326,9 @@ function SimulatePanel() {
           )}
         </ResultBox>
       )}
+      <div className="mt-8 border-t border-neutral-800 pt-6">
+        <TrajectoryScrubber />
+      </div>
     </PanelWrapper>
   );
 }
@@ -445,6 +451,12 @@ function RecommendPanel() {
           )}
         </ResultBox>
       )}
+      <div className="mt-8 border-t border-neutral-800 pt-6">
+        <GuidePlateWizard
+          selectedGenes={result ? result.selected_genes : [10, 20, 30, 40, 50]}
+          apiBase={API_BASE}
+        />
+      </div>
     </PanelWrapper>
   );
 }
@@ -458,6 +470,7 @@ function GraphPanel() {
   const [error, setError] = useState("");
   const [nodes, setNodes] = useState<NodePos[]>([]);
   const [highlight, setHighlight] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"network" | "cascade">("network");
   const animRef = useRef<number>(0);
   const nodesRef = useRef<NodePos[]>([]);
   const W = 760, H = 500;
@@ -560,8 +573,36 @@ function GraphPanel() {
         <h2 className="text-2xl font-bold text-cyan-300">Gene Regulatory Network (GRN) Explorer</h2>
       </div>
       <p className="text-neutral-400 text-sm mb-6 leading-relaxed">
-        Visualize the TRRUST biological GRN as a force-directed graph. Each <strong className="text-cyan-300">node</strong> is a gene; each <strong className="text-cyan-300">edge</strong> is a regulatory interaction. Larger nodes = higher connectivity (hub genes). Hover to highlight neighbours.
+        Visualize the TRRUST biological GRN as a force-directed graph or trace directed multi-hop transcriptional cascades.
       </p>
+
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setViewMode("network")}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            viewMode === "network"
+              ? "bg-cyan-600 text-white shadow-lg"
+              : "bg-neutral-800 text-neutral-400 hover:text-white"
+          }`}
+        >
+          🕸 Global Force-Directed Network
+        </button>
+        <button
+          onClick={() => setViewMode("cascade")}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            viewMode === "cascade"
+              ? "bg-cyan-600 text-white shadow-lg"
+              : "bg-neutral-800 text-neutral-400 hover:text-white"
+          }`}
+        >
+          ⚡ Directed Biological Cascade (TRRUST)
+        </button>
+      </div>
+
+      {viewMode === "cascade" ? (
+        <RegulatoryCascadeViewer />
+      ) : (
+        <>
 
       {loadState === "idle" && (
         <button id="btn-load-graph" onClick={loadGraph}
@@ -638,6 +679,8 @@ function GraphPanel() {
 
           <button onClick={loadGraph} className="mt-4 text-xs text-neutral-500 hover:text-neutral-300 underline">Reload with new random layout</button>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -30,7 +30,7 @@ from simulation.rollout_engine import RolloutEngine
 from active_learning.acquisition import compute_candidate_metrics, rank_and_select
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# -- Helpers ------------------------------------------------------------------
 
 def get_node_degree(gene_idx, edge_index):
     return ((edge_index[0] == gene_idx).sum() + (edge_index[1] == gene_idx).sum()).item()
@@ -216,11 +216,11 @@ def main(args):
         json.dump(output, f, indent=2)
 
     elapsed = (time.time() - t0) / 60
-    print(f"\n✓ Full AL experiment done in {elapsed:.1f} min")
+    print(f"\n[DONE] Full AL experiment done in {elapsed:.1f} min")
     print(f"  Results → {out_path}")
 
     # Quick summary
-    print("\n── Aggregated Convergence ──")
+    print("\n-- Aggregated Convergence --")
     for strat, v in aggregated.items():
         means = [f"{m:.4f}" for m in v["mean"]]
         stds  = [f"{s:.4f}" for s in v["std"]]
